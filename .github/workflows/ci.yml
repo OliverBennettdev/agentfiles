@@ -17,6 +17,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Check tool count drift
         run: bun run scripts/check-tool-count.ts
+      - name: Test
+        run: bun test
       - name: Build
         run: bun run build
       - name: Lint
