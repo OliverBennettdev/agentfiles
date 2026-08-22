@@ -1,27 +1,36 @@
-import { beforeAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import { join } from "path";
 
-let activeVariant = "";
-let activeExtensionId = "";
+const HOME = "/home/agentfiles-test";
+let existsPredicate = (_path: string) => false;
+const existsSync = mock((path: unknown) =>
+	existsPredicate(String(path).replaceAll("\\", "/")),
+);
 
 mock.module("os", () => ({
-	homedir: () => "/home/agentfiles-test",
+	homedir: () => HOME,
 	platform: () => "linux",
 }));
 
 mock.module("fs", () => ({
-	existsSync: (path: unknown) => {
-		const normalized = String(path).replaceAll("\\", "/");
-		return normalized.endsWith(
-			`/${activeVariant}/User/globalStorage/${activeExtensionId}`,
-		);
-	},
+	existsSync,
 	readdirSync: () => [],
 }));
 
-let toolConfigs: typeof import("../src/tool-configs");
+const toolConfigs = await import("../src/tool-configs");
 
-beforeAll(async () => {
-	toolConfigs = await import("../src/tool-configs");
+test("finds CLIs installed by supported package managers", () => {
+	for (const parts of [
+		[".local", "share", "pnpm"],
+		[".volta", "bin"],
+		[".fnm", "aliases", "default", "bin"],
+		[".asdf", "shims"],
+		[".proto", "bin"],
+	]) {
+		const expected = join(HOME, ...parts, "example-cli").replaceAll("\\", "/");
+		existsPredicate = (path) => path === expected;
+		expect(toolConfigs.cliExists("example-cli")).toBe(true);
+	}
 });
 
 const VSCODE_VARIANTS = [
@@ -46,8 +55,8 @@ describe("VS Code fork extension storage detection", () => {
 	for (const variant of VSCODE_VARIANTS) {
 		test(`detects extension-backed tools in ${variant}`, () => {
 			for (const tool of VSCODE_EXTENSION_TOOLS) {
-				activeVariant = variant;
-				activeExtensionId = tool.extensionId;
+				existsPredicate = (path) =>
+					path.endsWith(`/${variant}/User/globalStorage/${tool.extensionId}`);
 				toolConfigs.clearInstallCache();
 
 				const config = toolConfigs.TOOL_CONFIGS.find(({ id }) => id === tool.id);
